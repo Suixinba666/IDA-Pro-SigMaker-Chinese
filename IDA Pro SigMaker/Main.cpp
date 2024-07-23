@@ -1,13 +1,39 @@
 #include "Main.h"
 #include "Utils.h"
 #include "SignatureUtils.h"
+#include <codecvt>
 
 bool IS_ARM = false;
 
 static bool IsARM() {
 	return std::string_view("ARM") == inf.procname;
 }
+std::string StringToUTF8(const std::string& gbkData)
+{
+	const char* GBK_LOCALE_NAME = "CHS";  //GBK在windows下的locale name(.936, CHS ), linux下的locale名可能是"zh_CN.GBK"
 
+	std::wstring_convert<std::codecvt<wchar_t, char, mbstate_t>>
+		conv(new std::codecvt<wchar_t, char, mbstate_t>(GBK_LOCALE_NAME));
+	std::wstring wString = conv.from_bytes(gbkData);    // string => wstring
+
+	std::wstring_convert<std::codecvt_utf8<wchar_t>> convert;
+	std::string utf8str = convert.to_bytes(wString);     // wstring => utf-8
+
+	return utf8str;
+}
+const char* StringToUTF82(const std::string& gbkData)
+{
+	const char* GBK_LOCALE_NAME = "CHS";  //GBK在windows下的locale name(.936, CHS ), linux下的locale名可能是"zh_CN.GBK"
+
+	std::wstring_convert<std::codecvt<wchar_t, char, mbstate_t>>
+		conv(new std::codecvt<wchar_t, char, mbstate_t>(GBK_LOCALE_NAME));
+	std::wstring wString = conv.from_bytes(gbkData);    // string => wstring
+
+	std::wstring_convert<std::codecvt_utf8<wchar_t>> convert;
+	std::string utf8str = convert.to_bytes(wString);     // wstring => utf-8
+
+	return utf8str.c_str();
+}
 static bool GetOperandOffsetARM(const insn_t& instruction, uint8_t* operandOffset, uint8_t* operandLength) {
 
 	// Iterate all operands
@@ -95,11 +121,11 @@ static bool IsSignatureUnique(std::string_view idaSignature) {
 
 static std::expected<Signature, std::string> GenerateUniqueSignatureForEA(const ea_t ea, bool wildcardOperands, bool continueOutsideOfFunction, size_t maxSignatureLength = 1000, bool askLongerSignature = true) {
 	if (ea == BADADDR) {
-		return std::unexpected("Invalid address");
+		return std::unexpected(StringToUTF82("无效地址，请先选择"));
 	}
 
 	if (!is_code(get_flags(ea))) {
-		return std::unexpected("Can not create code signature for data");
+		return std::unexpected(StringToUTF82("无法为数据创建代码特征码"));
 	}
 
 	Signature signature;
@@ -188,7 +214,7 @@ static std::expected<Signature, std::string> GenerateUniqueSignatureForEA(const 
 // Function for code selection
 static std::expected<Signature, std::string> GenerateSignatureForEARange(ea_t eaStart, ea_t eaEnd, bool wildcardOperands) {
 	if (eaStart == BADADDR || eaEnd == BADADDR) {
-		return std::unexpected("Invalid address");
+		return std::unexpected(StringToUTF82("无效地址"));
 	}
 
 	Signature signature;
@@ -257,7 +283,7 @@ void PrintSignatureForEA(const std::expected<Signature, std::string>& signature,
 		return;
 	}
 	const auto signatureStr = FormatSignature(signature.value(), sigType);
-	msg("Signature for %I64X: %s\n", ea, signatureStr.c_str());
+	msg(StringToUTF8("特征码 %I64X: %s\n").c_str(), ea, signatureStr.c_str());
 	if (!SetClipboardText(signatureStr)) {
 		msg("Failed to copy to clipboard!");
 	}
@@ -459,6 +485,7 @@ static void SearchSignatureString(std::string input) {
 	}
 }
 
+
 bool idaapi plugin_ctx_t::run(size_t) {
 
 	// Check what processor we have
@@ -471,26 +498,29 @@ bool idaapi plugin_ctx_t::run(size_t) {
 		"STARTITEM 0\n"                                                         // TabStop
 		PLUGIN_NAME " v" PLUGIN_VERSION "\n"                                    // Title
 
-		"Select action:\n"                                                      // Title
-		"<Create unique Signature for current code address:R>\n"                // Radio Button 0
-		"<Find shortest XREF Signature for current data or code address:R>\n"	// Radio Button 1
-		"<Copy selected code:R>\n"                                              // Radio Button 2
-		"<Search for a signature:R>>\n"                                         // Radio Button 3
+		"选择操作:\n"                                                      // Title
+		"<为当前代码地址创建唯一特征码:R>\n"                // Radio Button 0
+		"<查找当前数据或代码地址的最短 XREF 特征码:R>\n"	// Radio Button 1
+		"<复制选定的代码:R>\n"                                              // Radio Button 2
+		"<搜索特征码:R>>\n"                                         // Radio Button 3
 
-		"Output format:\n"                                                      // Title
-		"<IDA Signature:R>\n"				                                    // Radio Button 0
-		"<x64Dbg Signature:R>\n"			                                    // Radio Button 1
-		"<C Byte Array Signature + String mask:R>\n"			                // Radio Button 2
-		"<C Raw Bytes Signature + Bitmask:R>>\n"			                    // Radio Button 3
+		"输出格式:\n"                                                      // Title
+		"<IDA 特征码:R>\n"				                                    // Radio Button 0
+		"<x64Dbg 特征码:R>\n"			                                    // Radio Button 1
+		"<C 字节数组特征码 + 字符串掩码:R>\n"			                // Radio Button 2
+		"<C 原始字节特征码 + 位掩码:R>>\n"			                    // Radio Button 3
 
-		"Options:\n"                                                            // Title
-		"<Wildcards for operands:C>\n"                                          // Checkbox Button 0
-		"<Continue when leaving function scope:C>>\n";							// Checkbox Button 1
+		"设置:\n"                                                            // Title
+		"<操作数通配符:C>\n"                                          // Checkbox Button 0
+		"<离开函数范围时继续:C>>\n";							// Checkbox Button 1
 
 	static short action = 0;
 	static short outputFormat = 0;
 	static short options = (1 << 0 | 0 << 1);
-	if (ask_form(format, &action, &outputFormat, &options)) {
+	
+	std::string a = StringToUTF8(format);
+	
+	if (ask_form(a.c_str(), &action, &outputFormat, &options)) {
 		const auto wildcardOperands = options & (1 << 0);
 		const auto continueOutsideOfFunction = options & (1 << 1);
 
@@ -501,7 +531,7 @@ bool idaapi plugin_ctx_t::run(size_t) {
 			// Find unique signature for current address
 			const auto ea = get_screen_ea();
 
-			show_wait_box("Generating signature...");
+			show_wait_box(StringToUTF8("生成特征码中...").c_str());
 
 			auto signature = GenerateUniqueSignatureForEA(ea, wildcardOperands, continueOutsideOfFunction);
 			PrintSignatureForEA(signature, ea, sigType);
